@@ -232,6 +232,12 @@ body{
   </div>
 </div>
 
+<!-- Mobile action bar (shown when item selected on touch) -->
+<div class="mob-bar" id="mob-bar">
+  <button class="mob-btn" id="mob-rename">rename</button>
+  <button class="mob-btn danger" id="mob-del">delete</button>
+</div>
+
 <script>
 // ─── SVG ICONS ────────────────────────────────────────────────────────────────
 const IC = {
@@ -697,11 +703,5 @@ drawStage();
 render();
 renderInputs();
 </script>
-<!-- Mobile action bar (shown when item selected on touch) -->
-<div class="mob-bar" id="mob-bar">
-  <button class="mob-btn" id="mob-rename">rename</button>
-  <button class="mob-btn danger" id="mob-del">delete</button>
-</div>
-
 </body>
 </html>
