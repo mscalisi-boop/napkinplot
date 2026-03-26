@@ -54,7 +54,7 @@ body{
 .sb{width:110px;flex-shrink:0;background:rgba(215,200,175,0.92);border-right:3px solid #8a7a60;display:flex;flex-direction:column;overflow:hidden;box-shadow:inset -2px 0 4px rgba(0,0,0,0.08)}
 .sb-hd{padding:9px 6px 8px;font-size:14px;font-weight:700;text-align:center;border-bottom:2px solid #8a7a60;line-height:1.3;flex-shrink:0;color:#2a1f0e}
 .sb-bd{overflow-y:auto;flex:1}
-.pi{display:flex;flex-direction:column;align-items:center;padding:6px 4px 5px;cursor:grab;border-bottom:1px dashed #b0a080;transition:background .15s;user-select:none}
+.pi{display:flex;flex-direction:column;align-items:center;padding:6px 4px 5px;cursor:grab;border-bottom:1px dashed #b0a080;transition:background .15s;user-select:none;touch-action:none}
 .pi:hover{background:rgba(255,248,225,0.5)}
 .pi svg{filter:url(#rough);pointer-events:none;display:block}
 .pi-l{font-size:11px;margin-top:2px;text-align:center;line-height:1.1;pointer-events:none;color:#3a2e1a}
@@ -66,7 +66,7 @@ body{
 .band{font-family:'Caveat','Comic Sans MS',cursive;font-size:21px;font-weight:700;border:none;border-bottom:2px solid #6a5a3a;background:transparent;outline:none;flex:1;min-width:0;color:#1a1208}
 .cv-w-placeholder{}
 .sv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
-.it{position:absolute;display:flex;flex-direction:column;align-items:center;cursor:move;padding:2px 4px;border-radius:3px;z-index:1;outline:2px solid transparent;user-select:none}
+.it{position:absolute;display:flex;flex-direction:column;align-items:center;cursor:move;padding:2px 4px;border-radius:3px;z-index:1;outline:2px solid transparent;user-select:none;touch-action:none}
 .it.s{outline:2px dashed #7a6040;background:rgba(0,0,0,.03);z-index:10}
 .it svg{filter:url(#rough);pointer-events:none;display:block}
 .it-l{font-size:12px;text-align:center;white-space:nowrap;pointer-events:none;color:#1a1a1a;line-height:1.2;margin-top:1px}
@@ -124,7 +124,31 @@ body{
   box-shadow:2px 2px 8px rgba(60,40,10,0.18), 0 0 0 1px rgba(180,150,90,0.3);
 }
 
-/* Portrait overlay: show when phone is held upright */
+/* Mobile action bar — appears below footer when item selected on touch */
+.mob-bar{
+  display:none;
+  position:fixed;bottom:0;left:0;right:0;
+  background:rgba(215,200,175,0.97);
+  border-top:2px solid #8a7a60;
+  padding:8px 16px;
+  gap:12px;
+  justify-content:center;
+  z-index:200;
+  font-family:'Caveat','Comic Sans MS',cursive;
+}
+.mob-bar.vis{display:flex}
+.mob-btn{
+  font-family:'Caveat','Comic Sans MS',cursive;
+  font-size:16px;padding:5px 18px;
+  border:2px solid #6a5a3a;
+  background:rgba(235,220,190,0.9);
+  border-radius:3px;cursor:pointer;color:#1a1208;
+}
+.mob-btn.danger{border-color:#a04030;color:#a04030}
+@media(hover:none){
+  /* on touch devices always show delete handles */
+  .idel{display:block!important}
+}
 .rotate-msg{
   display:none;
   position:fixed;inset:0;z-index:9999;
@@ -435,6 +459,10 @@ PAL.forEach(p => {
     drag = {src:'pal', t:p.t};
     document.body.style.cursor = 'copy';
   });
+  d.addEventListener('touchstart', e => {
+    e.preventDefault();
+    drag = {src:'pal', t:p.t, _cx:0, _cy:0};
+  }, {passive:false});
   sbEl.appendChild(d);
 });
 
@@ -544,50 +572,104 @@ function render() {
       d.appendChild(lbl);
     }
 
-    d.addEventListener('mousedown', e => {
-      e.stopPropagation();
-      selId = it.id;
-      drag = {src:'cv', id:it.id, sx:e.clientX, sy:e.clientY, ox:it.x, oy:it.y};
-      render();
-    });
+    d.addEventListener('mousedown', e => onItemStart(e, it));
+    d.addEventListener('touchstart', e => onItemStart(e, it), {passive:false});
     d.addEventListener('dblclick', e => { e.stopPropagation(); editId = it.id; render(); });
-    d.addEventListener('click',    e => { e.stopPropagation(); selId = it.id; render(); });
+    d.addEventListener('click',    e => { e.stopPropagation(); selId = it.id; updateMobBar(); render(); });
     cv.appendChild(d);
   });
 }
 
-// ─── DRAG ──────────────────────────────────────────────────────────────────────
-document.addEventListener('mousemove', e => {
-  if (!drag || drag.src !== 'cv') return;
-  const it = items.find(x => x.id === drag.id);
-  if (it) {
-    it.x = drag.ox + (e.clientX - drag.sx);
-    it.y = drag.oy + (e.clientY - drag.sy);
-    const el = cv.querySelector(`.it[data-id="${drag.id}"]`);
-    if (el) { el.style.left = it.x + 'px'; el.style.top = it.y + 'px'; }
-  }
+// ─── UNIFIED POINTER HELPERS ──────────────────────────────────────────────────
+// Extract clientX/Y from either a mouse or touch event
+function exy(e) {
+  if (e.touches && e.touches.length) return {x: e.touches[0].clientX, y: e.touches[0].clientY};
+  if (e.changedTouches && e.changedTouches.length) return {x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY};
+  return {x: e.clientX, y: e.clientY};
+}
+
+const isTouch = () => window.matchMedia('(hover:none)').matches;
+
+// Mobile bar
+const mobBar   = document.getElementById('mob-bar');
+const mobRename= document.getElementById('mob-rename');
+const mobDel   = document.getElementById('mob-del');
+function updateMobBar() {
+  if (selId !== null && isTouch()) mobBar.classList.add('vis');
+  else mobBar.classList.remove('vis');
+}
+mobRename.addEventListener('click', () => { if (selId!==null){editId=selId; render();} });
+mobDel.addEventListener('click', () => {
+  if (selId===null) return;
+  items = items.filter(x => x.id !== selId);
+  selId = null; mobBar.classList.remove('vis'); render();
 });
 
-document.addEventListener('mouseup', e => {
+// ─── DRAG ──────────────────────────────────────────────────────────────────────
+// Double-tap detection for rename
+let lastTap = 0;
+
+function onItemStart(e, it) {
+  e.stopPropagation();
+  // double-tap = rename
+  const now = Date.now();
+  if (now - lastTap < 300) { editId = it.id; lastTap = 0; render(); return; }
+  lastTap = now;
+  const {x,y} = exy(e);
+  selId = it.id;
+  drag = {src:'cv', id:it.id, sx:x, sy:y, ox:it.x, oy:it.y};
+  updateMobBar();
+  render();
+}
+
+function onMove(e) {
+  if (!drag) return;
+  if (e.cancelable) e.preventDefault();
+  const {x,y} = exy(e);
+  if (drag.src === 'cv') {
+    const it = items.find(i => i.id === drag.id);
+    if (it) {
+      it.x = drag.ox + (x - drag.sx);
+      it.y = drag.oy + (y - drag.sy);
+      const el = cv.querySelector(`.it[data-id="${drag.id}"]`);
+      if (el) { el.style.left = it.x+'px'; el.style.top = it.y+'px'; }
+    }
+  } else if (drag.src === 'pal') {
+    // show ghost position during touch-drag from palette
+    drag._cx = x; drag._cy = y;
+  }
+}
+
+function onEnd(e) {
   if (!drag) return;
   const d = drag; drag = null;
   document.body.style.cursor = '';
+  const {x,y} = exy(e);
   if (d.src === 'pal') {
+    const cx = d._cx ?? x, cy = d._cy ?? y;
     const r = cv.getBoundingClientRect();
-    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+    if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
       const pal = PAL.find(p => p.t === d.t);
       const ni = {
         id: nid++, t: d.t, l: pal?.l || d.t,
-        x: Math.max(4, Math.min(e.clientX - r.left - 22, r.width  - 90)),
-        y: Math.max(4, Math.min(e.clientY - r.top  - 22, r.height - 80)),
+        x: Math.max(4, Math.min(cx - r.left - 22, r.width  - 90)),
+        y: Math.max(4, Math.min(cy - r.top  - 22, r.height - 80)),
       };
-      items.push(ni);
-      selId = ni.id;
+      items.push(ni); selId = ni.id;
       addInputsFor(d.t);
+      updateMobBar();
       render();
     }
   }
-});
+}
+
+// Mouse events
+document.addEventListener('mousemove', onMove);
+document.addEventListener('mouseup',   onEnd);
+// Touch events
+document.addEventListener('touchmove', onMove, {passive:false});
+document.addEventListener('touchend',  onEnd);
+document.addEventListener('touchcancel', () => { drag = null; });
 
 // ─── KEYBOARD ─────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
@@ -597,16 +679,17 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && selId !== null) {
     e.preventDefault();
     items = items.filter(x => x.id !== selId);
-    selId = null;
-    render();
+    selId = null; render();
   }
 });
 
 // ─── MISC ──────────────────────────────────────────────────────────────────────
-cv.addEventListener('click', () => { if (editId === null) { selId = null; render(); } });
+cv.addEventListener('click', () => {
+  if (editId === null) { selId = null; updateMobBar(); render(); }
+});
 
 document.getElementById('clr').addEventListener('click', () => {
-  items = []; selId = null; editId = null; render();
+  items = []; selId = null; editId = null; mobBar.classList.remove('vis'); render();
 });
 
 new ResizeObserver(() => drawStage()).observe(cv);
@@ -614,5 +697,11 @@ drawStage();
 render();
 renderInputs();
 </script>
+<!-- Mobile action bar (shown when item selected on touch) -->
+<div class="mob-bar" id="mob-bar">
+  <button class="mob-btn" id="mob-rename">rename</button>
+  <button class="mob-btn danger" id="mob-del">delete</button>
+</div>
+
 </body>
 </html>
