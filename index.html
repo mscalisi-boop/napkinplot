@@ -622,10 +622,14 @@ function onItemStart(e, it) {
   if (now - lastTap < 300) { editId = it.id; lastTap = 0; render(); return; }
   lastTap = now;
   const {x,y} = exy(e);
-  selId = it.id;
+  // Update selection without re-rendering (re-render destroys the element being dragged)
+  if (selId !== it.id) {
+    cv.querySelectorAll('.it.s').forEach(el => el.classList.remove('s'));
+    e.currentTarget.classList.add('s');
+    selId = it.id;
+  }
   drag = {src:'cv', id:it.id, sx:x, sy:y, ox:it.x, oy:it.y};
   updateMobBar();
-  render();
 }
 
 function onMove(e) {
@@ -664,9 +668,9 @@ function onEnd(e) {
       items.push(ni); selId = ni.id;
       addInputsFor(d.t);
       updateMobBar();
-      render();
     }
   }
+  render();
 }
 
 // Mouse events
